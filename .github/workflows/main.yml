@@ -1,0 +1,31 @@
+name: Build project
+on: push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup build environment
+        run: |
+          sudo apt update
+          sudo apt install mingw-w64
+          ./setup.sh
+          TARGET=Windows_NT ./setup.sh
+          
+      - name: Build project
+        run: |
+          ./build.sh
+          TARGET=Windows_NT ./build.sh
+
+      - uses: actions/upload-artifact@v3.0.0
+        with:
+          name: gx200-linux
+          path: gx200
+            
+      - uses: actions/upload-artifact@v3.0.0
+        with:
+          name: gx200-windows
+          path: gx200.exe
