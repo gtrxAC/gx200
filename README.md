@@ -21,3 +21,7 @@ Emulator for the Gxphone GX200 fantasy phone.
 1. Install `mingw-w64` using your package manager.
 2. Run `TARGET=Windows_NT ./setup.sh` to set up the project.
 3. Run `TARGET=Windows_NT ./build.sh` to compile the project.
+
+## Sources
+* Gxphone's audio assets were created using [BeepBox](https://www.beepbox.co/).
+* The fonts were created using FontStruct and are available [here](https://fontstruct.com/fontstructors/2111997/gtrxac).
