@@ -11,13 +11,19 @@ void loadAssets(State *s) {
 	s->textures.skin = LoadTexture("skin.png");
 
 	s->textures.statusbar = LoadTexture("statusbar.png");
+	s->textures.charging = LoadTexture("charging.png");
 	s->textures.popup = LoadTexture("popup.png");
 
 	s->textures.bootAnim = LoadTexture("boot_anim.png");
 	s->textures.shutAnim = LoadTexture("shut_anim.png");
 
+	s->icons.batteryLow = LoadTexture("icons/battery_low.png");
 	s->icons.nokia = LoadTexture("icons/nokia.png");
+	s->icons.raylib = LoadTexture("icons/raylib.png");
 	s->icons.success = LoadTexture("icons/success.png");
+
+	s->icons.scrollUp = LoadTexture("icons/scroll_up.png");
+	s->icons.scrollDown = LoadTexture("icons/scroll_down.png");
 
 	s->fonts.s = LoadFontEx("small.ttf", 8, NULL, 0);
 	s->fonts.m = LoadFontEx("medium.ttf", 10, NULL, 0);
@@ -34,13 +40,18 @@ void unloadAssets(State *s) {
 	UnloadTexture(s->textures.skin);
 
 	UnloadTexture(s->textures.statusbar);
+	UnloadTexture(s->textures.charging);
 	UnloadTexture(s->textures.popup);
 
 	UnloadTexture(s->textures.bootAnim);
 	UnloadTexture(s->textures.shutAnim);
 
 	UnloadTexture(s->icons.nokia);
+	UnloadTexture(s->icons.raylib);
 	UnloadTexture(s->icons.success);
+
+	UnloadTexture(s->icons.scrollUp);
+	UnloadTexture(s->icons.scrollDown);
 
 	UnloadFont(s->fonts.s);
 	UnloadFont(s->fonts.m);
@@ -52,6 +63,14 @@ void unloadAssets(State *s) {
 }
 
 void updateKeys(State *s) {
+	if (IsKeyPressed(KEY_C)) {
+		s->charging = !s->charging;
+		if (s->charging) {
+			SetWindowTitle("GX200 Emulator");
+			if (!s->battery) s->battery = 1;
+		}
+	}
+	
 	if (IsMouseButtonUp(MOUSE_BUTTON_LEFT)) {
 		s->keys.lSoft = 0;
 		s->keys.rSoft = 0;
@@ -69,8 +88,7 @@ void updateKeys(State *s) {
 
 	#define CHECKKEY(rect, prop) \
 		if (CheckCollisionPointRec((Vector2) {GetTouchX(), GetTouchY()}, rect)) { \
-			s->keys.prop++; \
-			if (s->keys.prop == 1) PlaySound(s->sounds.keypad); \
+			if (++s->keys.prop == 1) PlaySound(s->sounds.keypad); \
 			DrawTextureRec(s->textures.skin, rect, (Vector2) {rect.x, rect.y}, (Color) {224, 224, 224, 255}); \
 		} else { \
 			s->keys.prop = 0; \
@@ -99,24 +117,91 @@ void updateKeys(State *s) {
 }
 
 void update(State *s) {
+	if (s->battery < 1 && s->curMenu != shutAnimMenu)
+		setMenu(s, shutAnimMenu);
+
+	if (!s->power) {
+		if (s->keys.back == 60) {
+			s->power = true;
+			setMenu(s, startupMenu);
+		}
+		return;
+	}
+
+	if (--s->batteryTimer < 1) {
+		if (s->charging) {
+			s->batteryTimer = GetRandomValue(250, 400);
+			if (s->battery < 5) s->battery++;
+		} else {
+			s->batteryTimer = GetRandomValue(900, 1100);
+			if (--s->battery == 1) setMenu(s, batteryLowMenu);
+		}
+	}
+
 	s->menuTimer++;
 	if (s->curMenu) s->curMenu(s);
 
 	switch (s->menuType) {
 		case MT_LIST:
 			if (s->keys.up == 1 && s->menuChoice > 0) {
+				if (--s->menuChoice == s->menuOffset - 1) s->menuOffset--;
+			}
+			if (s->keys.down == 1 && s->menuChoice < arrlen(s->menuItems) - 1) {
+				if (++s->menuChoice == s->menuOffset + 4) s->menuOffset++;
+			}
+			break;
+
+		case MT_TEXT:
+			if (s->keys.up == 1 && s->menuChoice > 0) {
 				s->menuChoice--;
-				if (s->menuChoice == s->menuOffset - 1) s->menuOffset--;
 			}
 			if (s->keys.down == 1 && s->menuChoice < arrlen(s->menuItems) - 1) {
 				s->menuChoice++;
-				if (s->menuChoice == s->menuOffset + 4) s->menuOffset++;
 			}
 			break;
 	}
 }
 
+void drawUI(State *s) {
+	// Status bar
+	DrawRectangle(0, 0, 96, 8, s->white);
+
+	int srcWidth = 81;
+
+	// Blinking battery bar when battery is low
+	if (s->battery > 1 || s->charging || s->batteryTimer % 40 < 20)
+		srcWidth += s->battery*3;
+
+	DrawTextureRec(s->textures.statusbar, (Rectangle) {0, 0, srcWidth, 8}, (Vector2) {0, 0}, s->dark);
+
+	if (s->charging) DrawTexture(s->textures.charging, 0, 0, s->dark);
+
+	DrawTextEx(s->fonts.s, s->title, (Vector2) {18, 0}, 8, 0, s->dark);
+
+	// Softkeys
+	DrawRectangle(0, 56, 96, 12, s->white);
+	DrawTextEx(s->fonts.l, s->leftSoft, (Vector2) {1, 56}, 12, 0, s->black);
+
+	Vector2 rSoftSize = MeasureTextEx(s->fonts.l, s->rightSoft, 12, 0);
+	DrawTextEx(s->fonts.l, s->rightSoft, (Vector2) {96 - rSoftSize.x, 56}, 12, 0, s->black);
+
+	// Scroll indicators
+	if (s->menuType == MT_LIST || s->menuType == MT_TEXT) {
+		if (s->menuChoice != 0) {
+			DrawTexture(s->icons.scrollUp, 42, 56, s->light);
+		}
+		if (s->menuChoice < arrlen(s->menuItems) - 1) {
+			DrawTexture(s->icons.scrollDown, 48, 62, s->light);
+		}
+	}
+}
+
 void draw(State *s) {
+	if (!s->power) {
+		ClearBackground(s->black);
+		return;
+	}
+
 	ClearBackground(s->white);
 
 	switch (s->menuType) {
@@ -151,18 +236,20 @@ void draw(State *s) {
 			}
 			break;
 		}
+
+		case MT_TEXT: {
+			if (!arrlen(s->menuItems)) break;
+
+			int y = 9;
+			if (s->menuItems[s->menuChoice].icon.id) {
+				DrawTexture(s->menuItems[s->menuChoice].icon, 1, 8, WHITE);
+				y += s->menuItems[s->menuChoice].icon.height + 1;
+			}
+
+			DrawTextEx(s->fonts.s, s->menuItems[s->menuChoice].text, (Vector2) {1, y}, 8, 0, s->black);
+			break;
+		}
 	}
-
-	DrawRectangle(0, 0, 96, 8, s->white);
-	DrawTexture(s->textures.statusbar, 0, 0, s->dark);
-
-	DrawTextEx(s->fonts.s, s->title, (Vector2) {18, 0}, 8, 0, s->dark);
-
-	DrawRectangle(0, 56, 96, 12, s->white);
-	DrawTextEx(s->fonts.l, s->leftSoft, (Vector2) {1, 56}, 12, 0, s->black);
-
-	Vector2 rSoftSize = MeasureTextEx(s->fonts.l, s->rightSoft, 12, 0);
-	DrawTextEx(s->fonts.l, s->rightSoft, (Vector2) {96 - rSoftSize.x, 56}, 12, 0, s->black);
 }
 
 int main() {
@@ -182,17 +269,20 @@ int main() {
 	#endif
 
 	rt = LoadRenderTexture(96, 68);
-	setMenu(s, homeScreenMenu);
+	setMenu(s, startupMenu);
 
 	s->black = (Color) {18, 16, 14, 255};
 	s->dark = (Color) {64, 48, 192, 255};
 	s->light = (Color) {128, 144, 255, 255};
 	s->white = (Color) {255, 240, 224, 255};
 
+	s->battery = 6;
+
 	while (!WindowShouldClose()) {
 		BeginTextureMode(rt);
 		update(s);
 		draw(s);
+		if (s->drawUI) drawUI(s);
 		EndTextureMode();
 
 		BeginDrawing();

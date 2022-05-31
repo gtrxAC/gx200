@@ -4,6 +4,7 @@
 char dialerStr[15] = {0};
 
 void setMenu(State *s, void (*func)()) {
+	if (func != s->prevMenu) s->prevMenu = s->curMenu;
 	s->curMenu = func;
 
 	arrfree(s->menuItems);
@@ -14,16 +15,83 @@ void setMenu(State *s, void (*func)()) {
 	s->menuTimer = -1;  // gets incremented to 0 next frame
 }
 
-void homeScreenMenu(State *s) {
-	if (!s->menuTimer) {
-		s->title = "Operator";
-		s->leftSoft = "Menu";
-		s->rightSoft = "Contacts";
-		s->menuType = MT_NONE;
+void startupMenu(State *s) {
+	s->title = "";
+	s->leftSoft = "";
+	s->rightSoft = "";
+	s->menuType = MT_NONE;
+	s->drawUI = false;
+
+	if (s->menuTimer == 120) setMenu(s, bootAnimMenu);
+}
+
+void bootAnimMenu(State *s) {
+	s->title = "";
+	s->leftSoft = "";
+	s->rightSoft = "";
+	s->menuType = MT_NONE;
+
+	DrawTextureRec(s->textures.bootAnim, (Rectangle) {0, 36*(s->menuTimer/12), 82, 36}, (Vector2) {7, 16}, WHITE);
+
+	if (s->keys.lSoft == 1 || s->keys.rSoft == 1 || s->keys.back == 1 || s->menuTimer == 30*12) {
+		setMenu(s, homeScreenMenu);
+		return;
 	}
+}
+
+void shutAnimMenu(State *s) {
+	s->title = "";
+	s->leftSoft = "";
+	s->rightSoft = "";
+	s->menuType = MT_NONE;
+	s->drawUI = false;
+
+	DrawTextureRec(s->textures.shutAnim, (Rectangle) {0, 36*(s->menuTimer/12), 82, 36}, (Vector2) {7, 16}, WHITE);
+
+	if (s->keys.lSoft == 1 || s->keys.rSoft == 1 || s->keys.back == 1 || s->menuTimer == 19*12) {
+		setMenu(s, startupMenu);
+		s->power = false;
+		return;
+	}
+}
+
+// prevMenu must be set to the current menu function before this menu is opened,
+// so it can return to the correct menu.
+void batteryLowMenu(State *s) {
+	s->title = "";
+	s->leftSoft = "";
+	s->rightSoft = "";
+	s->menuType = MT_POPUP;
+
+	if (!s->menuTimer) {
+		StopSound(s->sounds.keypad);
+		PlaySound(s->sounds.batteryLow);
+		arrput(s->menuItems, ((MenuItem) {s->icons.batteryLow, "Battery low!"}));
+		arrput(s->menuItems, ((MenuItem) {s->textures.none, "Please recharge"}));
+		arrput(s->menuItems, ((MenuItem) {s->textures.none, "phone now."}));
+		SetWindowTitle("GX200 Emulator - press C to charge");
+	}
+
+	if (s->keys.lSoft == 1 || s->keys.rSoft == 1 || s->keys.back == 1 || s->menuTimer > 180) {
+		setMenu(s, s->prevMenu);
+		return;
+	}
+}
+
+void homeScreenMenu(State *s) {
+	s->title = "Operator";
+	s->leftSoft = "Menu";
+	s->rightSoft = "Contacts";
+	s->menuType = MT_NONE;
+	s->drawUI = true;
 
 	if (s->keys.lSoft == 1) {
 		setMenu(s, mainMenu);
+		return;
+	}
+
+	if (s->keys.back == 60) {
+		setMenu(s, shutAnimMenu);
 		return;
 	}
 
@@ -142,6 +210,11 @@ void dialerMenu(State *s) {
 		return;
 	}
 
+	if (!strcmp(dialerStr, "*#88833777#")) {
+		setMenu(s, version2Menu);
+		return;
+	}
+
 	if (!strcmp(dialerStr, "*#06#")) {
 		setMenu(s, imeiMenu);
 		return;
@@ -210,7 +283,7 @@ void setColorMenu(State *s) {
 	s->menuItems[1].text = TextFormat("Green: %d", color.g);
 	s->menuItems[2].text = TextFormat("Blue: %d", color.b);
 
-	DrawTextEx(s->fonts.s, "left/right to modify", (Vector2) {1, 46}, 8, 0, color);
+	DrawTextEx(s->fonts.s, "Left/right to modify", (Vector2) {1, 46}, 8, 0, color);
 
 	if (s->keys.left) {
 		switch (s->menuChoice) {
@@ -337,6 +410,7 @@ void menuTestDoneMenu(State *s) {
 		s->rightSoft = "";
 		s->menuType = MT_POPUP;
 
+		StopSound(s->sounds.keypad);
 		PlaySound(s->sounds.beep);
 		arrput(s->menuItems, ((MenuItem) {s->icons.success, TextFormat("Option %d chosen", s->lastMenuChoice + 1)}));
 	}
@@ -354,12 +428,32 @@ void versionMenu(State *s) {
 		s->rightSoft = "";
 		s->menuType = MT_POPUP;
 
+		StopSound(s->sounds.keypad);
 		PlaySound(s->sounds.beep);
 		arrput(s->menuItems, ((MenuItem) {s->icons.nokia, "This isn't a"}));
 		arrput(s->menuItems, ((MenuItem) {s->textures.none, "Nokia!"}));
 	}
 
 	if (s->keys.lSoft == 1 || s->keys.rSoft == 1 || s->keys.back == 1 || s->menuTimer > 120) {
+		setMenu(s, homeScreenMenu);
+		return;
+	}
+}
+
+void version2Menu(State *s) {
+	if (!s->menuTimer) {
+		s->title = "Software ver.";
+		s->leftSoft = "";
+		s->rightSoft = "";
+		s->menuType = MT_TEXT;
+
+		PlaySound(s->sounds.beep);
+		arrput(s->menuItems, ((MenuItem) {s->textures.none, "GX200_SYSTEM_24050\n2_P_GLOBAL\nGX200_APPS_310502_P\n_GLOBAL"}));
+		arrput(s->menuItems, ((MenuItem) {s->icons.raylib, "This product includes\nsoftware developed"}));
+		arrput(s->menuItems, ((MenuItem) {s->textures.none, "using the raylib game\nframework.\nwww.raylib.com"}));
+	}
+
+	if (s->keys.back == 1) {
 		setMenu(s, homeScreenMenu);
 		return;
 	}
@@ -372,6 +466,7 @@ void imeiMenu(State *s) {
 		s->rightSoft = "";
 		s->menuType = MT_POPUP;
 
+		StopSound(s->sounds.keypad);
 		PlaySound(s->sounds.beep);
 		arrput(s->menuItems, ((MenuItem) {s->textures.none, "Modem Failure"}));
 		arrput(s->menuItems, ((MenuItem) {s->textures.none, "Contact Service"}));
